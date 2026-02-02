@@ -1,0 +1,168 @@
+:root {
+    --bg: #0b0b0e;
+    --panel: #14141a;
+    --primary: #8b5cf6;
+    --accent: #06b6d4;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+}
+
+/* LOGIN BOX */
+.login-container {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-box {
+    background: var(--panel);
+    padding: 3rem;
+    border-radius: 1.5rem;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+}
+
+.login-box h1 {
+    font-size: 1.5rem;
+    letter-spacing: 4px;
+    color: var(--primary);
+    margin-bottom: 2rem;
+}
+
+input {
+    width: 100%;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+    box-sizing: border-box;
+}
+
+button {
+    width: 100%;
+    padding: 1rem;
+    background: var(--primary);
+    border: none;
+    border-radius: 0.5rem;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+button:hover {
+    filter: brightness(1.2);
+    transform: scale(1.02);
+}
+
+/* DASHBOARD LAYOUT */
+.layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar {
+    background: var(--panel);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 2rem;
+    overflow-y: auto;
+}
+
+.sidebar h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-bottom: 1.5rem;
+}
+
+.agent-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 0.8rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.agent-item:hover {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.agent-item.active {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.1);
+}
+
+.agent-item h4 {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.agent-item p {
+    margin: 5px 0 0;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+/* MAIN CONTENT */
+.main {
+    display: flex;
+    flex-direction: column;
+    padding: 2rem;
+}
+
+.terminal {
+    flex: 1;
+    background: #000;
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    font-family: 'JetBrains Mono', monospace;
+    padding: 1.5rem;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: #10b981;
+}
+
+.input-area {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 1rem;
+}
+
+.input-area input {
+    margin: 0;
+}
+
+.input-area button {
+    width: auto;
+    padding: 0 2rem;
+}
+
+.status-online {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    margin-right: 5px;
+    box-shadow: 0 0 10px #10b981;
+}

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>GHOST-C2 | Seguridad</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0b0e;
+            --panel: #14141a;
+            --primary: #8b5cf6;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .login-box {
+            background: var(--panel);
+            padding: 3rem;
+            border-radius: 1.5rem;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            text-align: center;
+            width: 350px;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            letter-spacing: 4px;
+            color: var(--primary);
+            margin-bottom: 2rem;
+        }
+
+        .error {
+            color: #ff4444;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+            background: rgba(255, 68, 68, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            background: var(--primary);
+            border: none;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            filter: brightness(1.2);
+            transform: scale(1.02);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-box">
+        <h1>SYSTEM</h1>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST">
+            <input type="password" name="password" placeholder="Acceso de Comandante" required autofocus>
+            <button type="submit">AUTENTICAR</button>
+        </form>
+    </div>
+</body>
+
+</html>

