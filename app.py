@@ -25,6 +25,9 @@ if not firebase_admin._apps:
         env_key = os.environ.get("FIREBASE_KEY_JSON")
         if env_key:
             key_data = json.loads(env_key)
+            # LIMPIEZA CRÍTICA: Asegurar que los saltos de línea sean correctos
+            if "private_key" in key_data:
+                key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
             cred = credentials.Certificate(key_data)
         else:
             # Fallback al archivo local
@@ -36,6 +39,7 @@ if not firebase_admin._apps:
         print("Firebase inicializado correctamente")
     except Exception as e:
         print(f"Error crítico cargando Firebase: {e}")
+
 
 
 # CONFIGURACIÓN DE ACCESO
