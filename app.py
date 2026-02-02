@@ -21,24 +21,30 @@ app.secret_key = "GHOST_C2_ULTRA_SECRET_KEY_99"
 # --- CONFIGURACIÓN FIREBASE ---
 if not firebase_admin._apps:
     try:
-        # Intentar cargar desde variable de entorno (para Render/Nube)
         env_key = os.environ.get("FIREBASE_KEY_JSON")
         if env_key:
-            key_data = json.loads(env_key)
-            # LIMPIEZA CRÍTICA: Asegurar que los saltos de línea sean correctos
-            if "private_key" in key_data:
-                key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
-            cred = credentials.Certificate(key_data)
-        else:
-            # Fallback al archivo local
-            cred = credentials.Certificate("firebase-key.json")
+            # Detectar si es Base64 o JSON plano
+            if not env_key.strip().startswith("{"):
+                import base64 as b64
+                env_key = b64.b64decode(env_key).decode("utf-8")
             
+            key_data = json.loads(env_key)
+        else:
+            with open("firebase-key.json", "r") as f:
+                key_data = json.load(f)
+            
+        # LIMPIEZA UNIVERSAL: Asegurar que los saltos de línea sean correctos
+        if "private_key" in key_data:
+            key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
+            
+        cred = credentials.Certificate(key_data)
         firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://holaaa-2ca32-default-rtdb.europe-west1.firebasedatabase.app'
         })
         print("Firebase inicializado correctamente")
     except Exception as e:
         print(f"Error crítico cargando Firebase: {e}")
+
 
 
 
