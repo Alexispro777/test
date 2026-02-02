@@ -58,6 +58,16 @@ def purge():
     db_delete('results')
     return jsonify({"status": "database_cleaned"})
 
+@app.route('/api/v1/clear/<agent_id>', methods=['POST'])
+@login_required
+def clear_agent(agent_id):
+    if agent_id == 'all':
+        db_delete('results')
+    else:
+        db_delete(f'results/{agent_id}')
+    return jsonify({"status": "success"})
+
+
 @app.route('/api/v1/agent/register', methods=['POST'])
 def agent_register():
     data = request.json
